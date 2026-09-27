@@ -1,0 +1,51 @@
+{
+  "name": "inventory-management-system",
+  "version": "1.0.0",
+  "description": "Inventory Management System backend - Node.js, Express, PostgreSQL, Prisma",
+  "scripts": {
+    "dev": "node --watch src/server.js",
+    "start": "node src/server.js",
+    "db:migrate": "prisma migrate dev",
+    "db:deploy": "prisma migrate deploy",
+    "db:seed": "prisma db seed",
+    "db:reset": "prisma migrate reset",
+    "db:studio": "prisma studio",
+    "prisma:generate": "prisma generate",
+    "test": "dotenv -e .env.test -- jest --runInBand",
+    "test:db": "dotenv -e .env.test -- prisma migrate deploy"
+  },
+  "keywords": [
+    "nodejs",
+    "express",
+    "postgresql",
+    "prisma",
+    "inventory",
+    "rest-api",
+    "jwt"
+  ],
+  "author": "Aditya Gupta",
+  "license": "MIT",
+  "dependencies": {
+    "@prisma/adapter-pg": "6.19.3",
+    "@prisma/client": "6.19.3",
+    "bcryptjs": "^3.0.3",
+    "dotenv": "^17.4.2",
+    "express": "^5.2.1",
+    "jsonwebtoken": "^9.0.3",
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "dotenv-cli": "^11.0.0",
+    "jest": "^30.5.2",
+    "prisma": "6.19.3",
+    "supertest": "^7.3.0"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "private": true,
+  "prisma": {
+    "seed": "node prisma/seed.js"
+  },
+  "main": "src/server.js"
+}

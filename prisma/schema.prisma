@@ -1,0 +1,188 @@
+// Prisma schema: the single source of truth for the database structure.
+// Spring equivalent: your @Entity classes + the datasource config combined.
+//
+// Naming: models are PascalCase and singular (Product); @@map gives the real
+// PostgreSQL table a conventional lowercase plural name (products).
+
+generator client {
+  provider   = "prisma-client-js"
+  // "client" = Prisma's JS/WebAssembly query engine + the node-postgres driver
+  // (see src/config/prisma.js). No platform-specific native binary is needed
+  // at runtime, and it is the default setup from Prisma 7 onward.
+  engineType = "client"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------------------
+// Enums (become real PostgreSQL enum types; the DB rejects any other value)
+// ---------------------------------------------------------------------------
+
+enum Role {
+  ADMIN
+  STAFF
+  VIEWER
+}
+
+enum MovementType {
+  STOCK_IN
+  STOCK_OUT
+}
+
+enum OrderStatus {
+  PENDING
+  CONFIRMED
+  DISPATCHED
+}
+
+// ---------------------------------------------------------------------------
+// Users
+// ---------------------------------------------------------------------------
+
+model User {
+  id           Int      @id @default(autoincrement())
+  name         String
+  email        String   @unique
+  passwordHash String
+  role         Role     @default(VIEWER)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  // Relation fields: not columns. They let us navigate from a user to their records.
+  stockMovements StockMovement[]
+  orders         Order[]
+
+  @@map("users")
+}
+
+// ---------------------------------------------------------------------------
+// Catalog
+// ---------------------------------------------------------------------------
+
+model Category {
+  id          Int      @id @default(autoincrement())
+  name        String   @unique
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  products Product[]
+
+  @@map("categories")
+}
+
+model Product {
+  id          Int      @id @default(autoincrement())
+  sku         String   @unique
+  name        String
+  description String?
+  price       Decimal  @db.Decimal(10, 2) // exact money, never Float. CHECK (price > 0) in migration
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  categoryId Int // the actual foreign-key column
+  category   Category @relation(fields: [categoryId], references: [id]) // how to navigate it
+
+  inventory      Inventory[]
+  stockMovements StockMovement[]
+  orderItems     OrderItem[]
+
+  @@index([categoryId]) // PostgreSQL does not index foreign keys automatically
+  @@map("products")
+}
+
+model Warehouse {
+  id        Int      @id @default(autoincrement())
+  name      String   @unique
+  location  String
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  inventory      Inventory[]
+  stockMovements StockMovement[]
+  orders         Order[]
+
+  @@map("warehouses")
+}
+
+// ---------------------------------------------------------------------------
+// Inventory: current stock of ONE product in ONE warehouse
+// ---------------------------------------------------------------------------
+
+model Inventory {
+  id        Int      @id @default(autoincrement())
+  quantity  Int      @default(0) // CHECK (quantity >= 0) in migration
+  updatedAt DateTime @updatedAt
+
+  productId   Int
+  product     Product   @relation(fields: [productId], references: [id])
+  warehouseId Int
+  warehouse   Warehouse @relation(fields: [warehouseId], references: [id])
+
+  @@unique([productId, warehouseId]) // exactly one stock row per product per warehouse
+  @@index([warehouseId]) // "all stock in warehouse X" lookups
+  @@map("inventory")
+}
+
+// ---------------------------------------------------------------------------
+// Stock movements: append-only history of every inventory change
+// ---------------------------------------------------------------------------
+
+model StockMovement {
+  id        Int          @id @default(autoincrement())
+  type      MovementType
+  quantity  Int // always positive; `type` gives the direction. CHECK (quantity > 0) in migration
+  createdAt DateTime     @default(now())
+
+  productId     Int
+  product       Product   @relation(fields: [productId], references: [id])
+  warehouseId   Int
+  warehouse     Warehouse @relation(fields: [warehouseId], references: [id])
+  performedById Int
+  performedBy   User      @relation(fields: [performedById], references: [id])
+  orderId       Int? // set only when a STOCK_OUT was caused by confirming an order
+  order         Order?    @relation(fields: [orderId], references: [id])
+
+  @@index([productId, warehouseId]) // movement history for a product / product+warehouse
+  @@map("stock_movements")
+}
+
+// ---------------------------------------------------------------------------
+// Orders
+// ---------------------------------------------------------------------------
+
+model Order {
+  id          Int         @id @default(autoincrement())
+  orderNumber String      @unique
+  status      OrderStatus @default(PENDING)
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  warehouseId Int // the warehouse this order is fulfilled from
+  warehouse   Warehouse @relation(fields: [warehouseId], references: [id])
+  createdById Int
+  createdBy   User      @relation(fields: [createdById], references: [id])
+
+  items          OrderItem[]
+  stockMovements StockMovement[]
+
+  @@map("orders")
+}
+
+model OrderItem {
+  id       Int @id @default(autoincrement())
+  quantity Int // CHECK (quantity > 0) in migration
+
+  orderId   Int
+  order     Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  productId Int
+  product   Product @relation(fields: [productId], references: [id])
+
+  @@unique([orderId, productId]) // a product appears at most once per order
+  @@map("order_items")
+}
